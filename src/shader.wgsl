@@ -2,7 +2,7 @@
 struct CameraUniform {
     view_proj: mat4x4<f32>,
 };
-@group(0) @binding(0) // group defines order we put bind groups into the pipeline layout
+@group(0) @binding(0)
 var<uniform> camera: CameraUniform;
 
 struct VertexInput {
@@ -29,7 +29,7 @@ fn vs_main(
 @fragment
 fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
 
-    let gradient = in.clip_position/10.0;
+    let gradient = in.clip_position/1000.0;
     return vec4<f32>(gradient);
 
     // return vec4<f32>(in.color,1.0);

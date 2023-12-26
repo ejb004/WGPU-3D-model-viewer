@@ -1,5 +1,5 @@
 use winit::{
-    event::{ElementState, Event, KeyEvent, WindowEvent},
+    event::{ElementState, KeyEvent, WindowEvent},
     keyboard::{Key, NamedKey},
 };
 

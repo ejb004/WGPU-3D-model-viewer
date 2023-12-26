@@ -139,7 +139,7 @@ impl Application {
             .request_device(
                 &wgpu::DeviceDescriptor {
                     label: Some("main device"),
-                    features: wgpu::Features::default(),
+                    features: wgpu::Features::default(), //wgpu::Features::POLYGON_MODE_LINE,
                     limits: wgpu::Limits {
                         max_push_constant_size: 8,
                         ..Default::default()
@@ -306,7 +306,9 @@ impl Application {
 
         // --MODEL-- //
 
-        let obj_model = resources::load_model("cube.obj", &device).await.unwrap();
+        let obj_model = resources::load_model("manycubes.obj", &device)
+            .await
+            .unwrap();
 
         // --INSTANCES-- //
 
@@ -487,8 +489,10 @@ impl Application {
             render_pass.set_vertex_buffer(0, self.vertex_buffer.slice(..));
 
             use model::DrawModel;
-            render_pass
-                .draw_mesh_instanced(&self.obj_model.meshes[0], 0..self.instances.len() as u32);
+
+            for object in &self.obj_model.meshes {
+                render_pass.draw_mesh_instanced(object, 0..self.instances.len() as u32);
+            }
         }
 
         // could do drop(render_pass) here if we dont want braces nesting
