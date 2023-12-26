@@ -45,10 +45,12 @@ struct Instance {
 
 impl Instance {
     fn to_raw(&self) -> InstanceRaw {
+        let model =
+            cgmath::Matrix4::from_translation(self.position) * cgmath::Matrix4::from(self.rotation);
         InstanceRaw {
-            model: (cgmath::Matrix4::from_translation(self.position)
-                * cgmath::Matrix4::from(self.rotation))
-            .into(),
+            model: model.into(),
+            // NEW!
+            normal: cgmath::Matrix3::from(self.rotation).into(),
         }
     }
 }
@@ -58,6 +60,7 @@ impl Instance {
 struct InstanceRaw {
     #[allow(dead_code)]
     model: [[f32; 4]; 4],
+    normal: [[f32; 3]; 3],
 }
 
 impl InstanceRaw {
