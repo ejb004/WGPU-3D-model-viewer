@@ -306,9 +306,7 @@ impl Application {
 
         // --MODEL-- //
 
-        let obj_model = resources::load_model("manycubes.obj", &device)
-            .await
-            .unwrap();
+        let obj_model = resources::load_model("suzanne.obj", &device).await.unwrap();
 
         // --INSTANCES-- //
 
