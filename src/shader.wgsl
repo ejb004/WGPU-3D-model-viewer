@@ -18,6 +18,13 @@ struct VertexOutput {
     @location(2) world_position: vec3<f32>,
 }
 
+struct Light {
+    position: vec3<f32>,
+    color: vec3<f32>,
+}
+@group(1) @binding(0)
+var<uniform> light: Light;
+
 @vertex
 fn vs_main(
     model: VertexInput,
@@ -32,5 +39,13 @@ fn vs_main(
 // Fragment shader
 @fragment
 fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
-    return vec4<f32>(in.normal, 1.0);
+    let object_color = vec4<f32>(in.normal, 1.0);
+    
+    // We don't need (or want) much ambient light, so 0.1 is fine
+    let ambient_strength = 0.1;
+    let ambient_color = light.color * ambient_strength;
+
+    let result = ambient_color * object_color.xyz;
+
+    return vec4<f32>(result, object_color.a);
 }
