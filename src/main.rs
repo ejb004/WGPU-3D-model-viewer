@@ -214,8 +214,9 @@ impl Application {
         let camera = camera::Camera::new((0.0, 5.0, 10.0), cgmath::Deg(-90.0), cgmath::Deg(-20.0));
         let projection =
             camera::Projection::new(config.width, config.height, cgmath::Deg(45.0), 0.1, 100.0);
-        let camera_controller = camera::CameraController::new(0.1, 0.1);
+        let camera_controller = camera::CameraController::new(4.0, 0.5);
         let mut camera_uniform = camera::CameraUniform::new();
+        camera_uniform.update_view_proj(&camera, &projection);
 
         // this is a uniform buffer for the camera
         let camera_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
@@ -408,11 +409,11 @@ impl Application {
     fn run(&mut self, event_loop: EventLoop<()>) {
         // Initialize the frame counter
         let mut frame_count = 0;
-        let mut last_frame_time = Instant::now();
+        let mut last_fps_check = Instant::now();
+        let mut last_render_time = Instant::now();
         event_loop.set_control_flow(ControlFlow::Poll);
         let _ = event_loop.run(move |event, elwt| {
             match event {
-
                 Event::DeviceEvent {
                     event: DeviceEvent::MouseMotion{ delta, },
                     .. // We're not using device_id currently
@@ -450,11 +451,12 @@ impl Application {
                                 // this event rather than in AboutToWait, since rendering in here allows
                                 // the program to gracefully handle redraws requested by the OS.
 
-                                // FRAMERATE CALC
-                                let elapsed_time = last_frame_time.elapsed();
-                                frame_count += 1;
+                                let now = instant::Instant::now();
+                                let dt = now - last_render_time;
+                                last_render_time = now;
+                                
 
-                                self.update(elapsed_time);
+                                self.update(dt);
 
                                 match self.render() {
                                     Ok(_) => {}
@@ -466,14 +468,19 @@ impl Application {
                                     Err(e) => eprintln!("{:?}", e),
                                 }
 
-                                if elapsed_time >= Duration::from_secs(1) {
-                                    let fps = frame_count as f64 / elapsed_time.as_secs_f64();
-                                    println!("FPS: {:.2}", fps);
+                                 // FRAMERATE CALC
+                                 let elapsed_time = last_fps_check.elapsed();
+                                 frame_count += 1;
+ 
+                                 if elapsed_time >= Duration::from_secs(1) {
+                                     let fps = frame_count as f64 / elapsed_time.as_secs_f64();
+                                     println!("FPS: {:.2}", fps);
+ 
+                                     // Reset frame counter and timer
+                                     frame_count = 0;
+                                     last_fps_check = Instant::now();
+                                 }
 
-                                    // Reset frame counter and timer
-                                    frame_count = 0;
-                                    last_frame_time = Instant::now();
-                                }
                             }
 
                             _ => (),
@@ -500,7 +507,6 @@ impl Application {
     }
 
     fn update(&mut self, dt: Duration) {
-        println!("update");
         self.camera_controller.update_camera(&mut self.camera, dt);
         self.camera_uniform
             .update_view_proj(&self.camera, &self.projection);
@@ -525,10 +531,11 @@ impl Application {
     }
 
     fn input(&mut self, event: &WindowEvent) -> bool {
+        self.window.request_redraw();
         match event {
             WindowEvent::KeyboardInput {
                 event: key_event, ..
-            } => self.camera_controller.process_keyboard(key_event.clone()),
+            } => {self.camera_controller.process_keyboard(key_event.clone())},
             WindowEvent::MouseWheel { delta, .. } => {
                 self.camera_controller.process_scroll(delta);
                 true

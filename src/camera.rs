@@ -5,6 +5,7 @@ use winit::dpi::PhysicalPosition;
 use winit::event::KeyEvent;
 use winit::event::*;
 use winit::keyboard::{Key, KeyCode, NamedKey, PhysicalKey};
+use winit::keyboard::{NativeKey, SmolStr};
 
 #[rustfmt::skip]
 pub const OPENGL_TO_WGPU_MATRIX: cgmath::Matrix4<f32> = cgmath::Matrix4::new(
@@ -114,33 +115,32 @@ impl CameraController {
         };
         match event {
             KeyEvent {
-                logical_key: Key::Named(NamedKey::ArrowUp),
+                logical_key: Key::Character(c),
                 ..
-            } => {
+            } if c == "w" => {
                 self.amount_forward = amount;
                 true
             }
-
             KeyEvent {
-                logical_key: Key::Named(NamedKey::ArrowDown),
+                logical_key: Key::Character(c),
                 ..
-            } => {
+            } if c == "s" => {
                 self.amount_backward = amount;
                 true
             }
 
             KeyEvent {
-                logical_key: Key::Named(NamedKey::ArrowLeft),
+                logical_key: Key::Character(c),
                 ..
-            } => {
+            } if c == "a" => {
                 self.amount_left = amount;
                 true
             }
 
             KeyEvent {
-                logical_key: Key::Named(NamedKey::ArrowRight),
+                logical_key: Key::Character(c),
                 ..
-            } => {
+            } if c == "d" => {
                 self.amount_right = amount;
                 true
             }
@@ -179,7 +179,6 @@ impl CameraController {
     }
 
     pub fn update_camera(&mut self, camera: &mut Camera, dt: Duration) {
-        println!("update");
         let dt = dt.as_secs_f32();
 
         // Move forward/backward and left/right
@@ -219,8 +218,6 @@ impl CameraController {
         } else if camera.pitch > Rad(SAFE_FRAC_PI_2) {
             camera.pitch = Rad(SAFE_FRAC_PI_2);
         }
-
-        println!("update camera dt: {:?}", dt);
     }
 }
 
