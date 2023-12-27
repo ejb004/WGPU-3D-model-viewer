@@ -97,7 +97,14 @@ pub async fn load_model(file_name: &str, device: &wgpu::Device) -> anyhow::Resul
                         m.mesh.positions[i * 3 + 1],
                         m.mesh.positions[i * 3 + 2],
                     ],
-                    tex_coords: [m.mesh.texcoords[i * 2], m.mesh.texcoords[i * 2 + 1]],
+                    tex_coords: if m.mesh.texcoords.is_empty() {
+                        [0.0, 0.0] // Provide default texture coordinates when texcoords is empty
+                    } else {
+                        [
+                            m.mesh.texcoords.get(i * 2).cloned().unwrap_or_default(),
+                            m.mesh.texcoords.get(i * 2 + 1).cloned().unwrap_or_default(),
+                        ]
+                    },
                     normal: [
                         m.mesh.normals[i * 3],
                         m.mesh.normals[i * 3 + 1],

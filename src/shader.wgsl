@@ -76,24 +76,23 @@ fn vs_main(
 // Fragment shader
 @fragment
 fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
-    let object_color = vec4<f32>(in.world_normal, 1.0);
+    let object_color = vec4<f32>(0.9,0.2,0.3, 1.0);
+
+    let light_dir = normalize(light.position - in.world_position);
+    let view_dir = normalize(camera.view_pos.xyz - in.world_position);
+    let half_dir = normalize(view_dir + light_dir);
     
     // -- AMBIENT -- //
-    // We don't need (or want) much ambient light, so 0.1 is fine
+    // We don't need much ambient light, so 0.1 is fine
     let ambient_strength = 0.1;
     let ambient_color = light.color * ambient_strength;
 
     // -- DIFFUSE -- //
-    let light_dir = normalize(light.position - in.world_position);
-
     let diffuse_strength = max(dot(in.world_normal, light_dir), 0.0);
     let diffuse_color = light.color * diffuse_strength;
 
     // -- SPECULAR -- //
-    let view_dir = normalize(camera.view_pos.xyz - in.world_position);
-    let reflect_dir = reflect(-light_dir, in.world_normal);
-
-    let specular_strength = pow(max(dot(view_dir, reflect_dir), 0.0), 32.0);
+    let specular_strength = pow(max(dot(in.world_normal, half_dir), 0.0), 32.0);
     let specular_color = specular_strength * light.color;
 
     // -- RESULT -- //

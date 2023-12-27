@@ -5,7 +5,16 @@ mod resources;
 mod texture;
 mod utils;
 
+const OBJMODEL_NAME: &str = "Suzanne.obj";
+const LIGHTMODEL_NAME: &str = "Light.obj";
+
+//MODEL NAMES:
+// JaggedLandscape
+// Suzanne
+// manycubeds
+
 use cgmath::prelude::*;
+use std::time::{Duration, Instant};
 use winit::{
     event::*,
     event_loop::{ControlFlow, EventLoop},
@@ -42,6 +51,7 @@ struct Application {
     light_buffer: wgpu::Buffer,
     light_bind_group: wgpu::BindGroup,
     light_render_pipeline: wgpu::RenderPipeline,
+    light_model: model::Model,
 }
 
 struct Instance {
@@ -197,11 +207,7 @@ impl Application {
         };
         window_surface.configure(&device, &config);
 
-        // parse shader
-        let shader = device.create_shader_module(wgpu::include_wgsl!("shader.wgsl"));
-
         // --CAMERA-- //
-
         let camera = camera::Camera {
             // position the camera 1 unit up and 2 units back
             // +z is out of the screen
@@ -359,9 +365,12 @@ impl Application {
 
         let num_indices = INDICES.len() as u32;
 
-        // --MODEL-- //
+        // --MODELS-- //
 
-        let obj_model = resources::load_model("suzanne.obj", &device).await.unwrap();
+        let obj_model = resources::load_model(OBJMODEL_NAME, &device).await.unwrap();
+        let light_model = resources::load_model(LIGHTMODEL_NAME, &device)
+            .await
+            .unwrap();
 
         // --INSTANCES-- //
 
@@ -400,12 +409,17 @@ impl Application {
             light_buffer,
             light_bind_group,
             light_render_pipeline,
+            light_model,
         }
     }
 
     //https://docs.rs/winit/latest/winit/  helpfulf for redraw where to put
     fn run(&mut self, event_loop: EventLoop<()>) {
         event_loop.set_control_flow(ControlFlow::Poll);
+
+        // Initialize the frame counter
+        let mut frame_count = 0;
+        let mut last_frame_time = Instant::now();
 
         let _ = event_loop.run(move |event, elwt| {
             match event {
@@ -448,6 +462,19 @@ impl Application {
                                     Err(wgpu::SurfaceError::OutOfMemory) => elwt.exit(),
                                     // All other errors (Outdated, Timeout) should be resolved by the next frame
                                     Err(e) => eprintln!("{:?}", e),
+                                }
+
+                                // FRAMERATE CALC
+                                let elapsed_time = last_frame_time.elapsed();
+                                frame_count += 1;
+
+                                if elapsed_time >= Duration::from_secs(1) {
+                                    let fps = frame_count as f64 / elapsed_time.as_secs_f64();
+                                    println!("FPS: {:.2}", fps);
+
+                                    // Reset frame counter and timer
+                                    frame_count = 0;
+                                    last_frame_time = Instant::now();
                                 }
                             }
 
@@ -558,7 +585,7 @@ impl Application {
             use crate::model::DrawLight;
             render_pass.set_pipeline(&self.light_render_pipeline);
             render_pass.draw_light_model(
-                &self.obj_model,
+                &self.light_model,
                 &self.camera_bind_group,
                 &self.light_bind_group,
             );
