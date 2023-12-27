@@ -231,7 +231,7 @@ impl Application {
             device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
                 entries: &[wgpu::BindGroupLayoutEntry {
                     binding: 0,
-                    visibility: wgpu::ShaderStages::VERTEX, //only really need camera information in the vertex shader, as that's what we'll use to manipulate our vertices
+                    visibility: wgpu::ShaderStages::VERTEX | wgpu::ShaderStages::FRAGMENT, //only really need camera information in the vertex shader, as that's what we'll use to manipulate our vertices
                     ty: wgpu::BindingType::Buffer {
                         ty: wgpu::BufferBindingType::Uniform,
                         has_dynamic_offset: false, //means that the location of the data in the buffer wont change
