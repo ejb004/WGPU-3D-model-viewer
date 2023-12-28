@@ -107,7 +107,7 @@ impl CameraController {
         }
     }
 
-    pub fn process_keyboard(&mut self, event: KeyEvent) -> bool {
+    pub fn process_keyboard(&mut self, event: KeyEvent, mut debug: bool) -> bool {
         let amount = if event.state == ElementState::Pressed {
             1.0
         } else {
@@ -150,6 +150,15 @@ impl CameraController {
                 ..
             } => {
                 self.amount_up = amount;
+                true
+            }
+
+            KeyEvent {
+                logical_key: Key::Named(NamedKey::Enter),
+                ..
+            } => {
+                println!("debug");
+                debug = true;
                 true
             }
 

@@ -5,7 +5,7 @@ mod resources;
 mod texture;
 mod utils;
 
-const OBJMODEL_NAME: &str = "Shell.obj";
+const OBJMODEL_NAME: &str = "Suzanne.obj";
 const LIGHTMODEL_NAME: &str = "Light.obj";
 
 //MODEL NAMES:
@@ -55,6 +55,8 @@ struct Application {
     light_bind_group: wgpu::BindGroup,
     light_render_pipeline: wgpu::RenderPipeline,
     light_model: model::Model,
+    debug_pipeline: wgpu::RenderPipeline,
+    debug: bool,
 }
 
 struct Instance {
@@ -177,7 +179,7 @@ impl Application {
             .request_device(
                 &wgpu::DeviceDescriptor {
                     label: Some("main device"),
-                    features: wgpu::Features::default(), //wgpu::Features::POLYGON_MODE_LINE,
+                    features: wgpu::Features::default() | wgpu::Features::POLYGON_MODE_LINE, //wgpu::Features::POLYGON_MODE_LINE,
                     limits: wgpu::Limits {
                         max_push_constant_size: 8,
                         ..Default::default()
@@ -316,10 +318,10 @@ impl Application {
                 Some(texture::Texture::DEPTH_FORMAT),
                 &[model::ModelVertex::desc(), InstanceRaw::desc()],
                 shader,
+                wgpu::PolygonMode::Fill
             )
         };
 
-        // lib.rs
         let light_render_pipeline = {
             let layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
                 label: Some("Light Pipeline Layout"),
@@ -337,8 +339,27 @@ impl Application {
                 Some(texture::Texture::DEPTH_FORMAT),
                 &[model::ModelVertex::desc()],
                 shader,
+                wgpu::PolygonMode::Fill
             )
         };
+
+        let debug_pipeline = {
+            let shader = wgpu::ShaderModuleDescriptor {
+                label: Some("Normal Shader"),
+                source: wgpu::ShaderSource::Wgsl(include_str!("debug.wgsl").into()),
+            };
+            create_render_pipeline(
+                &device,
+                &render_pipeline_layout,
+                config.format,
+                Some(texture::Texture::DEPTH_FORMAT),
+                &[model::ModelVertex::desc(), InstanceRaw::desc()],
+                shader,
+                wgpu::PolygonMode::Line
+            )
+        };
+
+
 
         // create a vertex buffer to store all my verticies
         let vertex_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
@@ -402,6 +423,8 @@ impl Application {
             light_render_pipeline,
             light_model,
             projection,
+            debug_pipeline,
+            debug: false,
         }
     }
 
@@ -535,7 +558,28 @@ impl Application {
         match event {
             WindowEvent::KeyboardInput {
                 event: key_event, ..
-            } => {self.camera_controller.process_keyboard(key_event.clone())},
+            } => {
+                match key_event {
+                    KeyEvent {
+                        logical_key: Key::Character(c),
+                        repeat,
+                        state,
+                        ..
+                    } if c == "j" => {
+                        if !repeat && state.is_pressed(){
+                            if self.debug {
+                                println!("Debug: false");
+                                self.debug = false;
+                            } else {
+                                println!("Debug: true");
+                                self.debug = true;
+                        }};
+                        
+                        true
+                    }
+                    _ => self.camera_controller.process_keyboard(key_event.clone(), self.debug)
+                }
+            }
             WindowEvent::MouseWheel { delta, .. } => {
                 self.camera_controller.process_scroll(delta);
                 true
@@ -617,7 +661,11 @@ impl Application {
             );
 
             use model::DrawModel;
-            render_pass.set_pipeline(&self.render_pipeline);
+            if self.debug {
+                render_pass.set_pipeline(&self.debug_pipeline);
+            } else {
+                render_pass.set_pipeline(&self.render_pipeline);
+            }
             render_pass.draw_model(
                 // or could add ...model_instanced with (0..self.instances.len() as u32) parameter to do instancing
                 &self.obj_model,
@@ -643,6 +691,7 @@ fn create_render_pipeline(
     depth_format: Option<wgpu::TextureFormat>,
     vertex_layouts: &[wgpu::VertexBufferLayout],
     shader: wgpu::ShaderModuleDescriptor,
+    poly_mode: wgpu::PolygonMode
 ) -> wgpu::RenderPipeline {
     let shader = device.create_shader_module(shader);
 
@@ -670,9 +719,9 @@ fn create_render_pipeline(
             topology: wgpu::PrimitiveTopology::TriangleList,
             strip_index_format: None,
             front_face: wgpu::FrontFace::Ccw,
-            cull_mode: None,
+            cull_mode: Some(wgpu::Face::Back),
             // Setting this to anything other than Fill requires Features::NON_FILL_POLYGON_MODE
-            polygon_mode: wgpu::PolygonMode::Fill,
+            polygon_mode: poly_mode,
             // Requires Features::DEPTH_CLIP_CONTROL
             unclipped_depth: false,
             // Requires Features::CONSERVATIVE_RASTERIZATION
