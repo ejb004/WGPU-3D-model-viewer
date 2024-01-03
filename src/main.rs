@@ -1,9 +1,10 @@
 mod camera;
+mod camera_controller;
 mod lights;
 mod model;
+mod orbit_camera;
 mod resources;
 mod texture;
-mod utils;
 
 const OBJMODEL_NAME: &str = "Suzanne.obj";
 const LIGHTMODEL_NAME: &str = "Light.obj";
@@ -14,17 +15,18 @@ const LIGHTMODEL_NAME: &str = "Light.obj";
 // manycubeds
 // TwistedTorus
 
-use cgmath::prelude::*;
+use camera_controller::CameraController;
+use cgmath::{prelude::*, Vector3};
+use orbit_camera::OrbitCamera;
 use std::time::{Duration, Instant};
 use winit::{
     event::*,
     event_loop::{ControlFlow, EventLoop},
     keyboard::{Key, NamedKey},
     window::Window,
-    window::WindowBuilder,
+    window::{Fullscreen, WindowBuilder},
 };
 
-use utils::*;
 use wgpu::util::DeviceExt;
 
 use lights::*;
@@ -37,18 +39,13 @@ struct Application {
     size: winit::dpi::PhysicalSize<u32>,
     config: wgpu::SurfaceConfiguration,
     render_pipeline: wgpu::RenderPipeline,
-    vertex_buffer: wgpu::Buffer,
-    index_buffer: wgpu::Buffer,
-    num_indices: u32,
-    camera: camera::Camera,
+    camera: orbit_camera::OrbitCamera,
     camera_uniform: camera::CameraUniform,
-    camera_controller: camera::CameraController,
-    projection: camera::Projection,
+    camera_controller: camera_controller::CameraController,
     mouse_pressed: bool,
     camera_buffer: wgpu::Buffer,
     camera_bind_group: wgpu::BindGroup,
     obj_model: model::Model,
-    instances: Vec<Instance>,
     depth_texture: texture::Texture,
     light_uniform: LightUniform,
     light_buffer: wgpu::Buffer,
@@ -57,86 +54,6 @@ struct Application {
     light_model: model::Model,
     debug_pipeline: wgpu::RenderPipeline,
     debug: bool,
-}
-
-struct Instance {
-    position: cgmath::Vector3<f32>,
-    rotation: cgmath::Quaternion<f32>,
-}
-
-impl Instance {
-    fn to_raw(&self) -> InstanceRaw {
-        let model =
-            cgmath::Matrix4::from_translation(self.position) * cgmath::Matrix4::from(self.rotation);
-        InstanceRaw {
-            model: model.into(),
-            // NEW!
-            normal: cgmath::Matrix3::from(self.rotation).into(),
-        }
-    }
-}
-
-#[repr(C)]
-#[derive(Debug, Copy, Clone, bytemuck::Pod, bytemuck::Zeroable)]
-struct InstanceRaw {
-    #[allow(dead_code)]
-    model: [[f32; 4]; 4],
-    normal: [[f32; 3]; 3],
-}
-
-impl InstanceRaw {
-    fn desc() -> wgpu::VertexBufferLayout<'static> {
-        use std::mem;
-        wgpu::VertexBufferLayout {
-            array_stride: mem::size_of::<InstanceRaw>() as wgpu::BufferAddress,
-            // We need to switch from using a step mode of Vertex to Instance
-            // This means that our shaders will only change to use the next
-            // instance when the shader starts processing a new instance
-            step_mode: wgpu::VertexStepMode::Instance,
-            attributes: &[
-                wgpu::VertexAttribute {
-                    offset: 0,
-                    // While our vertex shader only uses locations 0, and 1 now, in later tutorials we'll
-                    // be using 2, 3, and 4, for Vertex. We'll start at slot 5 not conflict with them later
-                    shader_location: 5,
-                    format: wgpu::VertexFormat::Float32x4,
-                },
-                // A mat4 takes up 4 vertex slots as it is technically 4 vec4s. We need to define a slot
-                // for each vec4. We don't have to do this in code though.
-                wgpu::VertexAttribute {
-                    offset: mem::size_of::<[f32; 4]>() as wgpu::BufferAddress,
-                    shader_location: 6,
-                    format: wgpu::VertexFormat::Float32x4,
-                },
-                wgpu::VertexAttribute {
-                    offset: mem::size_of::<[f32; 8]>() as wgpu::BufferAddress,
-                    shader_location: 7,
-                    format: wgpu::VertexFormat::Float32x4,
-                },
-                wgpu::VertexAttribute {
-                    offset: mem::size_of::<[f32; 12]>() as wgpu::BufferAddress,
-                    shader_location: 8,
-                    format: wgpu::VertexFormat::Float32x4,
-                },
-                // TRANSLATED NORMALS (ROTATED)
-                wgpu::VertexAttribute {
-                    offset: mem::size_of::<[f32; 16]>() as wgpu::BufferAddress,
-                    shader_location: 9,
-                    format: wgpu::VertexFormat::Float32x3,
-                },
-                wgpu::VertexAttribute {
-                    offset: mem::size_of::<[f32; 19]>() as wgpu::BufferAddress,
-                    shader_location: 10,
-                    format: wgpu::VertexFormat::Float32x3,
-                },
-                wgpu::VertexAttribute {
-                    offset: mem::size_of::<[f32; 22]>() as wgpu::BufferAddress,
-                    shader_location: 11,
-                    format: wgpu::VertexFormat::Float32x3,
-                },
-            ],
-        }
-    }
 }
 
 impl Application {
@@ -153,6 +70,7 @@ impl Application {
             .with_title("WGPU")
             .with_resizable(true)
             .with_inner_size(winit::dpi::LogicalSize::new(1280, 720))
+            // .with_fullscreen(Some(Fullscreen::Borderless(None)))
             .build(&event_loop)
             .unwrap();
 
@@ -213,12 +131,17 @@ impl Application {
         window_surface.configure(&device, &config);
 
         // --CAMERA-- //
-        let camera = camera::Camera::new((0.0, 5.0, 10.0), cgmath::Deg(-90.0), cgmath::Deg(-20.0));
-        let projection =
-            camera::Projection::new(config.width, config.height, cgmath::Deg(45.0), 0.1, 100.0);
-        let camera_controller = camera::CameraController::new(4.0, 0.5);
-        let mut camera_uniform = camera::CameraUniform::new();
-        camera_uniform.update_view_proj(&camera, &projection);
+        let mut camera = OrbitCamera::new(
+            2.0,
+            0.0,
+            0.0,
+            Vector3::new(0.0, 0.0, 0.0),
+            size.width as f32 / size.height as f32,
+        );
+        camera.bounds.min_distance = Some(1.1);
+        let camera_controller = CameraController::new(0.0025, 0.1);
+        let mut camera_uniform = camera::CameraUniform::default();
+        camera_uniform.update_view_proj(&camera);
 
         // this is a uniform buffer for the camera
         let camera_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
@@ -232,7 +155,7 @@ impl Application {
             device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
                 entries: &[wgpu::BindGroupLayoutEntry {
                     binding: 0,
-                    visibility: wgpu::ShaderStages::VERTEX | wgpu::ShaderStages::FRAGMENT, //only really need camera information in the vertex shader, as that's what we'll use to manipulate our vertices
+                    visibility: wgpu::ShaderStages::VERTEX | wgpu::ShaderStages::FRAGMENT,
                     ty: wgpu::BindingType::Buffer {
                         ty: wgpu::BufferBindingType::Uniform,
                         has_dynamic_offset: false, //means that the location of the data in the buffer wont change
@@ -316,9 +239,9 @@ impl Application {
                 &render_pipeline_layout,
                 config.format,
                 Some(texture::Texture::DEPTH_FORMAT),
-                &[model::ModelVertex::desc(), InstanceRaw::desc()],
+                &[model::ModelVertex::desc()],
                 shader,
-                wgpu::PolygonMode::Fill
+                wgpu::PolygonMode::Fill,
             )
         };
 
@@ -329,7 +252,7 @@ impl Application {
                 push_constant_ranges: &[],
             });
             let shader = wgpu::ShaderModuleDescriptor {
-                label: Some("Light Shader"),
+                label: Some("Light Pipeline"),
                 source: wgpu::ShaderSource::Wgsl(include_str!("light.wgsl").into()),
             };
             create_render_pipeline(
@@ -339,42 +262,26 @@ impl Application {
                 Some(texture::Texture::DEPTH_FORMAT),
                 &[model::ModelVertex::desc()],
                 shader,
-                wgpu::PolygonMode::Fill
+                wgpu::PolygonMode::Fill,
             )
         };
 
         let debug_pipeline = {
             let shader = wgpu::ShaderModuleDescriptor {
-                label: Some("Normal Shader"),
+                label: Some("Debug Pipeline"),
                 source: wgpu::ShaderSource::Wgsl(include_str!("debug.wgsl").into()),
             };
+            println!("Here");
             create_render_pipeline(
                 &device,
                 &render_pipeline_layout,
                 config.format,
                 Some(texture::Texture::DEPTH_FORMAT),
-                &[model::ModelVertex::desc(), InstanceRaw::desc()],
+                &[model::ModelVertex::desc()],
                 shader,
-                wgpu::PolygonMode::Line
+                wgpu::PolygonMode::Line,
             )
         };
-
-
-
-        // create a vertex buffer to store all my verticies
-        let vertex_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-            label: Some("Vertex Buffer"),
-            contents: bytemuck::cast_slice(VERTICES),
-            usage: wgpu::BufferUsages::VERTEX,
-        });
-
-        let index_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-            label: Some("Index Buffer"),
-            contents: bytemuck::cast_slice(INDICES),
-            usage: wgpu::BufferUsages::INDEX,
-        });
-
-        let num_indices = INDICES.len() as u32;
 
         // --MODELS-- //
 
@@ -382,20 +289,6 @@ impl Application {
         let light_model = resources::load_model(LIGHTMODEL_NAME, &device)
             .await
             .unwrap();
-
-        // --INSTANCES-- //
-
-        let position = cgmath::Vector3 {
-            x: 0.0,
-            y: 0.0,
-            z: 0.0,
-        };
-        let rotation =
-            cgmath::Quaternion::from_axis_angle(cgmath::Vector3::unit_z(), cgmath::Deg(0.0));
-
-        let mut instances: Vec<Instance> = Vec::new();
-
-        instances.push(Instance { position, rotation });
 
         Application {
             window,
@@ -405,9 +298,6 @@ impl Application {
             size,
             config,
             render_pipeline,
-            vertex_buffer,
-            index_buffer,
-            num_indices,
             camera,
             camera_uniform,
             camera_buffer,
@@ -415,14 +305,12 @@ impl Application {
             camera_controller,
             mouse_pressed: false,
             obj_model,
-            instances,
             depth_texture,
             light_uniform,
             light_buffer,
             light_bind_group,
             light_render_pipeline,
             light_model,
-            projection,
             debug_pipeline,
             debug: false,
         }
@@ -431,17 +319,12 @@ impl Application {
     //https://docs.rs/winit/latest/winit/  helpfulf for redraw where to put
     fn run(&mut self, event_loop: EventLoop<()>) {
         // Initialize the frame counter
-        let mut frame_count = 0;
-        let mut last_fps_check = Instant::now();
-        let mut last_render_time = Instant::now();
         event_loop.set_control_flow(ControlFlow::Poll);
         let _ = event_loop.run(move |event, elwt| {
             match event {
-                Event::DeviceEvent {
-                    event: DeviceEvent::MouseMotion{ delta, },
-                    .. // We're not using device_id currently
-                } => if self.mouse_pressed {
-                    self.camera_controller.process_mouse(delta.0, delta.1)
+                Event::DeviceEvent { ref event, .. } => {
+                    self.camera_controller
+                        .process_events(event, &self.window, &mut self.camera);
                 }
 
                 Event::WindowEvent {
@@ -462,6 +345,9 @@ impl Application {
                                 elwt.exit();
                             }
 
+                            WindowEvent::KeyboardInput { event, .. } => {
+                                self.camera_controller.process_keyed_events(&event)
+                            }
                             // Resizing
                             WindowEvent::Resized(physical_size) => {
                                 self.resize(*physical_size);
@@ -475,11 +361,8 @@ impl Application {
                                 // the program to gracefully handle redraws requested by the OS.
 
                                 let now = instant::Instant::now();
-                                let dt = now - last_render_time;
-                                last_render_time = now;
-                                
 
-                                self.update(dt);
+                                self.update();
 
                                 match self.render() {
                                     Ok(_) => {}
@@ -491,19 +374,9 @@ impl Application {
                                     Err(e) => eprintln!("{:?}", e),
                                 }
 
-                                 // FRAMERATE CALC
-                                 let elapsed_time = last_fps_check.elapsed();
-                                 frame_count += 1;
- 
-                                 if elapsed_time >= Duration::from_secs(1) {
-                                     let fps = frame_count as f64 / elapsed_time.as_secs_f64();
-                                     println!("FPS: {:.2}", fps);
- 
-                                     // Reset frame counter and timer
-                                     frame_count = 0;
-                                     last_fps_check = Instant::now();
-                                 }
-
+                                // FRAMERATE CALC
+                                let elapsed = now.elapsed().as_millis();
+                                println!("{:#?}ms", elapsed)
                             }
 
                             _ => (),
@@ -523,67 +396,65 @@ impl Application {
             self.window_surface.configure(&self.device, &self.config);
         }
 
-        self.projection.resize(new_size.width, new_size.height);
+        self.camera
+            .resize_projection(new_size.width, new_size.height);
 
         self.depth_texture =
             texture::Texture::create_depth_texture(&self.device, &self.config, "depth_texture");
     }
 
-    fn update(&mut self, dt: Duration) {
-        self.camera_controller.update_camera(&mut self.camera, dt);
-        self.camera_uniform
-            .update_view_proj(&self.camera, &self.projection);
+    fn update(&mut self) {
+        self.camera_uniform.update_view_proj(&self.camera);
         self.command_queue.write_buffer(
             &self.camera_buffer,
             0,
             bytemuck::cast_slice(&[self.camera_uniform]),
         );
 
-        // Update the light position
-        let old_position: cgmath::Vector3<_> = self.light_uniform.position.into();
-        self.light_uniform.position = (cgmath::Quaternion::from_axis_angle(
-            (0.0, 1.0, 0.0).into(),
-            cgmath::Deg(60.0 * dt.as_secs_f32()),
-        ) * old_position)
-            .into();
-        self.command_queue.write_buffer(
-            &self.light_buffer,
-            0,
-            bytemuck::cast_slice(&[self.light_uniform]),
-        );
+        // // Update the light position
+        // let old_position: cgmath::Vector3<_> = self.light_uniform.position.into();
+        // self.light_uniform.position = (cgmath::Quaternion::from_axis_angle(
+        //     (0.0, 1.0, 0.0).into(),
+        //     cgmath::Deg(60.0 * dt.as_secs_f32()),
+        // ) * old_position)
+        //     .into();
+        // self.command_queue.write_buffer(
+        //     &self.light_buffer,
+        //     0,
+        //     bytemuck::cast_slice(&[self.light_uniform]),
+        // );
     }
 
     fn input(&mut self, event: &WindowEvent) -> bool {
-        self.window.request_redraw();
+        // self.window.request_redraw();
         match event {
             WindowEvent::KeyboardInput {
                 event: key_event, ..
-            } => {
-                match key_event {
-                    KeyEvent {
-                        logical_key: Key::Character(c),
-                        repeat,
-                        state,
-                        ..
-                    } if c == "j" => {
-                        if !repeat && state.is_pressed(){
-                            if self.debug {
-                                println!("Debug: false");
-                                self.debug = false;
-                            } else {
-                                println!("Debug: true");
-                                self.debug = true;
-                        }};
-                        
-                        true
-                    }
-                    _ => self.camera_controller.process_keyboard(key_event.clone(), self.debug)
+            } => match key_event {
+                KeyEvent {
+                    logical_key: Key::Character(c),
+                    repeat,
+                    state,
+                    ..
+                } if c == "j" => {
+                    if !repeat && state.is_pressed() {
+                        if self.debug {
+                            println!("Debug: false");
+                            self.debug = false;
+                        } else {
+                            println!("Debug: true");
+                            self.debug = true;
+                        }
+                    };
+
+                    true
                 }
-            }
-            WindowEvent::MouseWheel { delta, .. } => {
-                self.camera_controller.process_scroll(delta);
-                true
-            }
+                _ => false, //self.camera_controller.process_keyboard(key_event.clone()),
+            },
+            // WindowEvent::MouseWheel { delta, .. } => {
+            //     self.camera_controller.process_scroll(delta);
+            //     true
+            // }
             WindowEvent::MouseInput {
                 button: MouseButton::Left,
                 state,
@@ -649,9 +520,6 @@ impl Application {
                 timestamp_writes: None,
             });
 
-            render_pass.set_bind_group(0, &self.camera_bind_group, &[]);
-            render_pass.set_vertex_buffer(1, self.vertex_buffer.slice(..));
-
             use crate::model::DrawLight;
             render_pass.set_pipeline(&self.light_render_pipeline);
             render_pass.draw_light_model(
@@ -691,7 +559,7 @@ fn create_render_pipeline(
     depth_format: Option<wgpu::TextureFormat>,
     vertex_layouts: &[wgpu::VertexBufferLayout],
     shader: wgpu::ShaderModuleDescriptor,
-    poly_mode: wgpu::PolygonMode
+    poly_mode: wgpu::PolygonMode,
 ) -> wgpu::RenderPipeline {
     let shader = device.create_shader_module(shader);
 
