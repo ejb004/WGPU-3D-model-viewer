@@ -6,30 +6,27 @@ mod orbit_camera;
 mod resources;
 mod texture;
 
-const OBJMODEL_NAME: &str = "Suzanne.obj";
-const LIGHTMODEL_NAME: &str = "Light.obj";
+const OBJMODEL_NAME: &str = "manycubes.obj";
 
 //MODEL NAMES:
 // JaggedLandscape
 // Suzanne
-// manycubeds
+// manycubes
 // TwistedTorus
 
 use camera_controller::CameraController;
-use cgmath::{prelude::*, Vector3};
+use cgmath::Vector3;
 use orbit_camera::OrbitCamera;
-use std::time::{Duration, Instant};
 use winit::{
     event::*,
     event_loop::{ControlFlow, EventLoop},
     keyboard::{Key, NamedKey},
     window::Window,
-    window::{Fullscreen, WindowBuilder},
+    window::WindowBuilder,
 };
 
 use wgpu::util::DeviceExt;
 
-use lights::*;
 use model::Vertex;
 struct Application {
     window: Window,
@@ -47,11 +44,7 @@ struct Application {
     camera_bind_group: wgpu::BindGroup,
     obj_model: model::Model,
     depth_texture: texture::Texture,
-    light_uniform: LightUniform,
-    light_buffer: wgpu::Buffer,
     light_bind_group: wgpu::BindGroup,
-    light_render_pipeline: wgpu::RenderPipeline,
-    light_model: model::Model,
     debug_pipeline: wgpu::RenderPipeline,
     debug: bool,
 }
@@ -245,27 +238,6 @@ impl Application {
             )
         };
 
-        let light_render_pipeline = {
-            let layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
-                label: Some("Light Pipeline Layout"),
-                bind_group_layouts: &[&camera_bind_group_layout, &light_bind_group_layout],
-                push_constant_ranges: &[],
-            });
-            let shader = wgpu::ShaderModuleDescriptor {
-                label: Some("Light Pipeline"),
-                source: wgpu::ShaderSource::Wgsl(include_str!("light.wgsl").into()),
-            };
-            create_render_pipeline(
-                &device,
-                &layout,
-                config.format,
-                Some(texture::Texture::DEPTH_FORMAT),
-                &[model::ModelVertex::desc()],
-                shader,
-                wgpu::PolygonMode::Fill,
-            )
-        };
-
         let debug_pipeline = {
             let shader = wgpu::ShaderModuleDescriptor {
                 label: Some("Debug Pipeline"),
@@ -286,9 +258,6 @@ impl Application {
         // --MODELS-- //
 
         let obj_model = resources::load_model(OBJMODEL_NAME, &device).await.unwrap();
-        let light_model = resources::load_model(LIGHTMODEL_NAME, &device)
-            .await
-            .unwrap();
 
         Application {
             window,
@@ -306,11 +275,7 @@ impl Application {
             mouse_pressed: false,
             obj_model,
             depth_texture,
-            light_uniform,
-            light_buffer,
             light_bind_group,
-            light_render_pipeline,
-            light_model,
             debug_pipeline,
             debug: false,
         }
@@ -401,6 +366,8 @@ impl Application {
 
         self.depth_texture =
             texture::Texture::create_depth_texture(&self.device, &self.config, "depth_texture");
+
+        self.window.request_redraw();
     }
 
     fn update(&mut self) {
@@ -441,9 +408,11 @@ impl Application {
                         if self.debug {
                             println!("Debug: false");
                             self.debug = false;
+                            self.window.request_redraw();
                         } else {
                             println!("Debug: true");
                             self.debug = true;
+                            self.window.request_redraw();
                         }
                     };
 
@@ -519,14 +488,6 @@ impl Application {
                 occlusion_query_set: None,
                 timestamp_writes: None,
             });
-
-            use crate::model::DrawLight;
-            render_pass.set_pipeline(&self.light_render_pipeline);
-            render_pass.draw_light_model(
-                &self.light_model,
-                &self.camera_bind_group,
-                &self.light_bind_group,
-            );
 
             use model::DrawModel;
             if self.debug {

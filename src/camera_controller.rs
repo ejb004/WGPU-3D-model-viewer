@@ -1,13 +1,10 @@
+use crate::orbit_camera::OrbitCamera;
 use winit::{
     dpi::PhysicalPosition,
     event::{DeviceEvent, ElementState, KeyEvent, MouseScrollDelta},
-    keyboard::{Key, KeyCode, NamedKey, PhysicalKey},
+    keyboard::{KeyCode, PhysicalKey},
     window::Window,
 };
-
-use winit::event::WindowEvent::KeyboardInput;
-
-use crate::orbit_camera::OrbitCamera;
 
 pub struct CameraController {
     pub rotate_speed: f32,
