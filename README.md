@@ -1,1 +1,1 @@
-reading me and such
+To run, put a res folder in src/ and inside of that insert a .obj file. Then change constant filename at the top of main.rs to your model file and run. Camera is done such that the model is scaled for around 2 blender units, like with suzanne for example
